@@ -3,8 +3,23 @@ const io = require("socket.io")(9000, {
     origin: "http://localhost:3000",
   },
 });
+const axios = require("axios");
+const dotenv = require("dotenv");
+dotenv.config();
 
 let users = [];
+
+const sendStatusToDb = async (userId, status) => {
+  try {
+    await axios.default
+      .get(`${process.env.BACKEND_URL}/user/status/${userId}?status=${status}`)
+      .then((res) => {
+        console.log("res is ", res.data);
+      });
+  } catch (error) {
+    console.log("failed to send status to db...", error);
+  }
+};
 
 const addUser = (userId, socketId) => {
   console.log("arr length is ", users.length);
@@ -23,13 +38,14 @@ io.on("connection", (socket) => {
 
   socket.on("addUser", (userId) => {
     //console.log("userId", userId);
+    sendStatusToDb(userId, true);
     addUser(userId, socket.id);
     io.emit("getUsers", users);
     //console.log(users);
   });
 
   //send message
-  socket.on("sendMessage", ({ senderId, receiverId, text }) => {
+  socket.on("sendMessage", ({ senderId, receiverId, conversationId, text }) => {
     console.log(senderId, receiverId, text);
     const user = findReceverId(receiverId); //finding receiver id from user array
     //console.log("receiver user-->", user);
@@ -37,6 +53,7 @@ io.on("connection", (socket) => {
       io.to(user.socketId).emit("getMessage", {
         receiverId,
         senderId,
+        conversationId,
         text,
       });
     }
@@ -44,7 +61,12 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log("Client disconnected");
-    users = users.filter((user) => user.socketId !== socket.id);
+    users = users.filter((user) => {
+      if (user.socketId === socket.id) {
+        sendStatusToDb(user.userId, false);
+      }
+      return user.socketId !== socket.id;
+    });
     io.emit("getUsers", users);
   });
 });
